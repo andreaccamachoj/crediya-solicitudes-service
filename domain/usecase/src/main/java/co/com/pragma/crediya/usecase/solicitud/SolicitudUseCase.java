@@ -2,7 +2,6 @@ package co.com.pragma.crediya.usecase.solicitud;
 
 import co.com.pragma.crediya.model.estados.gateways.EstadosRepository;
 import co.com.pragma.crediya.model.exception.BusinessException;
-import co.com.pragma.crediya.model.exception.ValidationException;
 import co.com.pragma.crediya.model.exception.message.BusinessExceptionMessage;
 import co.com.pragma.crediya.model.exception.message.ValidationExceptionMessage;
 import co.com.pragma.crediya.model.solicitud.Solicitud;
@@ -10,8 +9,11 @@ import co.com.pragma.crediya.model.solicitud.gateways.SolicitudRepository;
 import co.com.pragma.crediya.model.tipoprestamo.gateways.TipoPrestamoRepository;
 import co.com.pragma.crediya.model.usuario.Usuario;
 import co.com.pragma.crediya.model.usuario.gateways.UsuarioGateway;
+import co.com.pragma.crediya.utils.ValidationHelper;
 import lombok.RequiredArgsConstructor;
 import reactor.core.publisher.Mono;
+
+import java.util.List;
 
 @RequiredArgsConstructor
 public class SolicitudUseCase {
@@ -19,52 +21,63 @@ public class SolicitudUseCase {
     private final SolicitudRepository solicitudRepository;
     private final TipoPrestamoRepository tipoPrestamoRepository;
     private final EstadosRepository estadoRepository;
-
     private final UsuarioGateway usuarioGateway;
 
-    private static final Long idEstadoPendienteRevision = 1L;
+    private static final Long ID_ESTADO_PENDIENTE_REVISION = 1L;
 
     public Mono<Solicitud> crearSolicitud(Solicitud solicitud) {
-        if (solicitud.getMonto() == null)
-            return Mono.error(new ValidationException(ValidationExceptionMessage.AMOUNT_REQUIRED));
-        if (solicitud.getMonto() <= 0)
-            return Mono.error(new ValidationException(ValidationExceptionMessage.AMOUNT_INVALID));
-        if (solicitud.getPlazo() == null || solicitud.getPlazo() <= 0)
-            return Mono.error(new ValidationException(ValidationExceptionMessage.TERM_INVALID));
-        if (solicitud.getIdTipoPrestamo() == null)
-            return Mono.error(new ValidationException(ValidationExceptionMessage.LOAN_TYPE_REQUIRED));
-
-        Mono<Void> validaTipo = tipoPrestamoRepository.existsById(solicitud.getIdTipoPrestamo())
-                .filter(Boolean::booleanValue)
-                .switchIfEmpty(Mono.error(new BusinessException(BusinessExceptionMessage.LOAN_TYPE_NOT_FOUND)))
-                .then();
-
-        Mono<Void> validaEstado = estadoRepository.existsById(idEstadoPendienteRevision)
-                .filter(Boolean::booleanValue)
-                .switchIfEmpty(Mono.error(new BusinessException(BusinessExceptionMessage.STATE_NOT_FOUND)))
-                .then();
-
-        Mono<Usuario> usuarioMono = usuarioGateway
-                .existsByDocumentoIdentidad(solicitud.getDocumentoIdentidad())
-                .switchIfEmpty(Mono.error(new BusinessException(BusinessExceptionMessage.USER_NOT_FOUND)))
-                .flatMap(usuario -> {
-                    Long idUsuario = usuario.getIdUsuario();
-                    if (idUsuario == null || idUsuario <= 0) {
-                        return Mono.error(new BusinessException(BusinessExceptionMessage.USER_ID_REQUIRED));
-                    }
-                    return Mono.just(usuario);
-                })
-                .onErrorResume(ex -> Mono.error(new BusinessException(BusinessExceptionMessage.USER_SERVICE_ERROR)));
-
-        return Mono.when(validaTipo, validaEstado)
-                .then(usuarioMono)
-                .flatMap(usuario -> {
-                    Solicitud toSave = solicitud.toBuilder()
-                            .idEstado(idEstadoPendienteRevision)
-                            .idUsuario(usuario.getIdUsuario())
-                            .build();
-                    return solicitudRepository.save(toSave);
-                });
+        return Mono.just(solicitud)
+                .flatMap(this::validarCamposRequeridos)
+                .flatMap(this::procesarValidacionesAsincronasYGuardar);
     }
 
+    private Mono<Solicitud> validarCamposRequeridos(Solicitud s) {
+        return ValidationHelper.validateAll(List.of(
+                () -> ValidationHelper.validateCondition(s.getMonto() != null,
+                        ValidationExceptionMessage.AMOUNT_REQUIRED),
+
+                () -> ValidationHelper.validateCondition(s.getMonto() != null && s.getMonto() > 0.0,
+                        ValidationExceptionMessage.AMOUNT_INVALID),
+
+                () -> ValidationHelper.validateCondition(s.getPlazo() != null && s.getPlazo() > 0,
+                        ValidationExceptionMessage.TERM_INVALID),
+
+                () -> ValidationHelper.validateCondition(s.getIdTipoPrestamo() != null,
+                        ValidationExceptionMessage.LOAN_TYPE_REQUIRED),
+
+                () -> ValidationHelper.validateBusinessCondition(s.getIdUsuario() != null,
+                        BusinessExceptionMessage.USER_ID_REQUIRED)
+        )).thenReturn(s);
+    }
+
+
+
+
+    private Mono<Solicitud> procesarValidacionesAsincronasYGuardar(Solicitud solicitud) {
+
+        Mono<Boolean> validarTipoPrestamo = tipoPrestamoRepository.existsById(solicitud.getIdTipoPrestamo())
+                .filter(Boolean::booleanValue)
+                .switchIfEmpty(Mono.error(new BusinessException(BusinessExceptionMessage.LOAN_TYPE_NOT_FOUND)));
+
+        Mono<Boolean> validarEstado = estadoRepository.existsById(ID_ESTADO_PENDIENTE_REVISION)
+                .filter(Boolean::booleanValue)
+                .switchIfEmpty(Mono.error(new BusinessException(BusinessExceptionMessage.STATE_NOT_FOUND)));
+
+        Mono<Usuario> obtenerUsuario = usuarioGateway.existsByDocumentoIdentidad(solicitud.getDocumentoIdentidad())
+                .switchIfEmpty(Mono.error(new BusinessException(BusinessExceptionMessage.USER_NOT_FOUND)))
+                .onErrorResume(ex -> !(ex instanceof BusinessException),
+                        ex -> Mono.error(new BusinessException(BusinessExceptionMessage.USER_SERVICE_ERROR)));
+
+
+        return Mono.zip(validarTipoPrestamo, validarEstado, obtenerUsuario)
+                .flatMap(tuple -> {
+                    Usuario usuario = tuple.getT3();
+                    Solicitud solicitudParaGuardar = solicitud.toBuilder()
+                            .idEstado(ID_ESTADO_PENDIENTE_REVISION)
+                            .idUsuario(usuario.getIdUsuario())
+                            .build();
+
+                    return solicitudRepository.save(solicitudParaGuardar);
+                });
+    }
 }
