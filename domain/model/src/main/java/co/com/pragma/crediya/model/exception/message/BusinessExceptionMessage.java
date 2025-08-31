@@ -16,7 +16,9 @@ public enum BusinessExceptionMessage {
     STATE_NOT_FOUND          ("BUS0102", "Estado no encontrado",                  "404", "El estado requerido no existe en el sistema."),
     USER_NOT_FOUND           ("BUS0103", "Usuario no encontrado",                 "404", "No existe un usuario asociado a los datos suministrados."),
     USER_ID_REQUIRED          ("BUS0104", "idUsuario no recibido",                  "404", "El idUsuario no fue recibido"),
-    USER_SERVICE_ERROR           ("BUS0105", "Error al consumir microservicio",                 "404", "Se produjo un error al consumir el microservicio de usuarios");
+    USER_SERVICE_ERROR           ("BUS0105", "Error al consumir microservicio",                 "404", "Se produjo un error al consumir el microservicio de usuarios"),
+    UNAUTHORIZED("BUS0008","Unauthorized","404",
+            "Usuario inautorizado.");
 
     private final String code;
     private final String description;

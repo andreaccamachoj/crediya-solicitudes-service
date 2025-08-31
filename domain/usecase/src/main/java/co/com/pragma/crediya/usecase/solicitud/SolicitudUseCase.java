@@ -43,14 +43,9 @@ public class SolicitudUseCase {
                         ValidationExceptionMessage.TERM_INVALID),
 
                 () -> ValidationHelper.validateCondition(s.getIdTipoPrestamo() != null,
-                        ValidationExceptionMessage.LOAN_TYPE_REQUIRED),
-
-                () -> ValidationHelper.validateBusinessCondition(s.getIdUsuario() != null,
-                        BusinessExceptionMessage.USER_ID_REQUIRED)
+                        ValidationExceptionMessage.LOAN_TYPE_REQUIRED)
         )).thenReturn(s);
     }
-
-
 
 
     private Mono<Solicitud> procesarValidacionesAsincronasYGuardar(Solicitud solicitud) {

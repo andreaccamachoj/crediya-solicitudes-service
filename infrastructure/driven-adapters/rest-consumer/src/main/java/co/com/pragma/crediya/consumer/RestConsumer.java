@@ -2,7 +2,6 @@ package co.com.pragma.crediya.consumer;
 
 import co.com.pragma.crediya.model.usuario.Usuario;
 import co.com.pragma.crediya.model.usuario.gateways.UsuarioGateway;
-import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;

@@ -128,19 +128,6 @@ class SolicitudUseCaseTest {
     }
 
     @Test
-    void crearSolicitudFailsWhenIdUsuarioIsNull() {
-        Solicitud solicitud = buildValidSolicitud();
-        solicitud.setIdUsuario(null);
-
-        StepVerifier.create(solicitudUseCase.crearSolicitud(solicitud))
-                .expectErrorSatisfies(error -> {
-                    assertInstanceOf(BusinessException.class, error);
-                    assertEquals(BusinessExceptionMessage.USER_ID_REQUIRED.getMessage(), error.getMessage());
-                })
-                .verify();
-    }
-
-    @Test
     void crearSolicitudFailsWhenTipoPrestamoNotFound() {
         Solicitud solicitud = buildValidSolicitud();
         Usuario usuario = buildUsuario();
