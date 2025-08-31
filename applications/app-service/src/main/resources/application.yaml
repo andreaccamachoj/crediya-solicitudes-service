@@ -1,14 +1,69 @@
-##Spring Configuration
 server:
-  port: 8080
+  port: 8081
 spring:
   application:
-    name: solicitudes
+    name: "solicitudes"
   devtools:
     add-properties: false
   h2:
     console:
       enabled: true
-      path: /h2
+      path: "/h2"
   profiles:
-    include:
+    include: null
+springdoc:
+  api-docs:
+    path: "/v3/api-docs"
+  swagger-ui:
+    path: "/swagger-ui"
+    try-it-out-enabled: true
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "health,prometheus"
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  health:
+    circuitbreakers:
+      enabled: true
+cors:
+  allowed-origins: "http://localhost:4200,http://localhost:8080"
+routes:
+  paths:
+    solicitud: "/api/v1/solicitud"
+adapters:
+  r2dbc:
+    host: "localhost"
+    port: 5432
+    database: "Autenticacion"
+    schema: "crediya"
+    username: "postgres"
+    password: "root"
+adapter:
+  restconsumer:
+    timeout: 5000
+    url: "http://localhost:8080/api/v1/usuario"
+resilience4j:
+  circuitbreaker:
+    instances:
+      testGet:
+        registerHealthIndicator: true
+        failureRateThreshold: 50
+        slowCallRateThreshold: 50
+        slowCallDurationThreshold: "2s"
+        permittedNumberOfCallsInHalfOpenState: 3
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 10
+        waitDurationInOpenState: "10s"
+      testPost:
+        registerHealthIndicator: true
+        failureRateThreshold: 50
+        slowCallRateThreshold: 50
+        slowCallDurationThreshold: "2s"
+        permittedNumberOfCallsInHalfOpenState: 3
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 10
+        waitDurationInOpenState: "10s"
