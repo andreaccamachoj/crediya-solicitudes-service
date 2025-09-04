@@ -44,8 +44,8 @@ adapters:
     password: "root"
 adapter:
   restconsumer:
-    timeout: 5000
-    url: "http://localhost:8080/api/v1/usuario"
+    timeout: 50000
+    url: "http://localhost:8080/api/v1"
 resilience4j:
   circuitbreaker:
     instances:
