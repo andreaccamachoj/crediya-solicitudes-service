@@ -60,13 +60,11 @@ public class SolicitudReactiveRepositoryAdapter extends ReactiveAdapterOperation
         log.info("Consultando detalles de solicitudes. Estados: {}, Usuarios: {}, PageRequest: {}",
                 estados, usuarios, pageRequest);
 
-        // total de registros
         Mono<Long> total = repository.countByEstadosAndUsuarios(estados, usuarios);
 
-        // aplicar skip/take en reactor
         Flux<SolicitudDetalle> content = repository.findDetallesByEstadosAndUsuarios(estados, usuarios)
-                .skip(pageRequest.offset())           // salta los registros previos
-                .take(pageRequest.getSize())          // limita a size
+                .skip(pageRequest.offset())
+                .take(pageRequest.getSize())
                 .doOnNext(detalle -> log.debug("Detalle encontrado: {}", detalle));
 
         return total.zipWith(content.collectList(),

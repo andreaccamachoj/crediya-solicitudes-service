@@ -23,7 +23,6 @@ public class TipoPrestamoReactiveRepositoryAdapter extends ReactiveAdapterOperat
         super(repository, mapper, d -> mapper.map(d, TipoPrestamo.class));
     }
 
-
     @Override
     public Mono<Boolean> existsById(Long id) {
         return repository.existsById(BigInteger.valueOf(id));

@@ -68,6 +68,5 @@ public interface SolicitudReactiveRepository extends ReactiveCrudRepository<Soli
            WHERE e.nombre IN (:estados)
              AND s.id_usuario IN (:usuarios)
            """)
-        // <-- CORRECCIÓN: Faltaban ambos @Param
     Mono<Long> countByEstadosAndUsuarios(@Param("estados") List<String> estados, @Param("usuarios") List<Long> usuarios);
 }

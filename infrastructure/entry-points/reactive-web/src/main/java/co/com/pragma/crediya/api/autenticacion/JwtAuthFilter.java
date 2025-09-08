@@ -25,7 +25,7 @@ public class JwtAuthFilter implements WebFilter {
     private static final String ATTR_AUTH_USER = "authUser";
     private static final String CTX_USER = "AUTH_USER";
 
-    private final UsuarioGateway usuarioGateway; // o TokenSesionGateway, según tu diseño
+    private final UsuarioGateway usuarioGateway;
 
     private static String mask(String bearerOrJwt) {
         if (bearerOrJwt == null) return "null";
@@ -48,12 +48,10 @@ public class JwtAuthFilter implements WebFilter {
         var method = req.getMethod();
         var path = req.getURI().getPath();
 
-        // Log de entrada
         String incomingAuth = req.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
         log.info("[AUTH-IN] {} {} from={} authPresent={}",
                 method, path, req.getRemoteAddress(), incomingAuth != null);
 
-        // Deja pasar preflight CORS
         if (HttpMethod.OPTIONS.equals(method)) {
             log.debug("[AUTH] preflight OPTIONS bypass {}", path);
             return chain.filter(ex).doFinally(sig -> {
@@ -76,7 +74,7 @@ public class JwtAuthFilter implements WebFilter {
 
         String tokenMasked = mask(incomingAuth);
 
-        return usuarioGateway.validarToken(incomingAuth) // pasa el "Bearer xxx" tal cual
+        return usuarioGateway.validarToken(incomingAuth)
                 .doOnSubscribe(s -> log.info("[AUTH] Validando token {} ...", tokenMasked))
                 .doOnNext(u -> {
                     try {
@@ -87,7 +85,6 @@ public class JwtAuthFilter implements WebFilter {
                     }
                 })
                 .flatMap(u -> {
-                    log.debug("[AUTH] authUser seteado en atributos; propagando token en Context");
                     ex.getAttributes().put(ATTR_AUTH_USER, u);
                     log.debug("[AUTH] authUser seteado en atributos; propagando token en Context");
                     return chain.filter(ex)

@@ -86,7 +86,7 @@ public class RouterRest {
                     )
             ),
             @RouterOperation(
-                    path = "/api/v1/solicitud/list",
+                    path = "/api/v1/solicitud/listar",
                     produces = { MediaType.APPLICATION_JSON_VALUE },
                     method = RequestMethod.GET,
                     beanClass = Handler.class,

@@ -203,14 +203,15 @@ class SolicitudUseCaseTest {
     }
 
     //METODO: listarSolicitudesPendientes
-
     @Test
-    void listarSolicitudesPendientes_debeRetornarPaginaConSolicitudes() {
+    void listarSolicitudesPendientes_sinFiltroEmail_debeRetornarPaginaConSolicitudes() {
+        // ARRANGE
         UsuarioAutenticado auth = buildAuthUsuario();
         auth.setNombreRol("ASESOR");
         SolicitudPageRequest pageRequest = new SolicitudPageRequest(0, 10);
+        String email = null; // Caso de prueba sin filtro de email
 
-        when(solicitudRepository.findDistinctIdUsuariosByEstados(any()))
+        when(solicitudRepository.findDistinctIdUsuariosByEstados(any(), eq(email)))
                 .thenReturn(Flux.just(25L));
 
         when(usuarioGateway.findAllByIds(any()))
@@ -222,7 +223,8 @@ class SolicitudUseCaseTest {
         when(solicitudRepository.findSolicitudesAprobadasByUsuarios(any()))
                 .thenReturn(Flux.empty()); // sin aprobadas
 
-        StepVerifier.create(solicitudUseCase.listarSolicitudesPendientes(pageRequest, auth))
+        // ACT & ASSERT
+        StepVerifier.create(solicitudUseCase.listarSolicitudesPendientes(pageRequest, auth, email))
                 .assertNext(resp -> {
                     assertEquals(1, resp.getTotalElements());
                     assertEquals("Camilo Gómez", resp.getContent().get(0).getNombre());
@@ -233,9 +235,12 @@ class SolicitudUseCaseTest {
 
     @Test
     void listarSolicitudesPendientes_debeFallarCuandoRolNoEsAsesor() {
+        // ARRANGE
         UsuarioAutenticado auth = buildAuthUsuario();
+        String email = null;
 
-        StepVerifier.create(solicitudUseCase.listarSolicitudesPendientes(new SolicitudPageRequest(0, 10), auth))
+        // ACT & ASSERT
+        StepVerifier.create(solicitudUseCase.listarSolicitudesPendientes(new SolicitudPageRequest(0, 10), auth, email))
                 .expectErrorMatches(ex -> ex instanceof BusinessException &&
                         ex.getMessage()
                                 .equals(BusinessExceptionMessage.ROL_NOT_ASESOR.getMessage()))
@@ -243,14 +248,17 @@ class SolicitudUseCaseTest {
     }
 
     @Test
-    void listarSolicitudesPendientes_debeRetornarVacioCuandoNoHayUsuarios() {
+    void listarSolicitudesPendientes_sinFiltroEmail_debeRetornarVacioCuandoNoHayUsuarios() {
+        // ARRANGE
         UsuarioAutenticado auth = buildAuthUsuario();
         auth.setNombreRol("ASESOR");
+        String email = null;
 
-        when(solicitudRepository.findDistinctIdUsuariosByEstados(any()))
+        when(solicitudRepository.findDistinctIdUsuariosByEstados(any(), eq(email)))
                 .thenReturn(Flux.empty());
 
-        StepVerifier.create(solicitudUseCase.listarSolicitudesPendientes(new SolicitudPageRequest(0, 10), auth))
+        // ACT & ASSERT
+        StepVerifier.create(solicitudUseCase.listarSolicitudesPendientes(new SolicitudPageRequest(0, 10), auth, email))
                 .assertNext(resp -> {
                     assertEquals(0, resp.getTotalElements());
                     assertTrue(resp.getContent().isEmpty());
@@ -259,35 +267,14 @@ class SolicitudUseCaseTest {
     }
 
     @Test
-    void listarSolicitudesPendientes_usuarioSinSolicitudesAprobadasDebeTenerDeudaCero() {
-        UsuarioAutenticado auth = buildAuthUsuario();
-        auth.setNombreRol("ASESOR");
-        SolicitudPageRequest pageRequest = new SolicitudPageRequest(0, 10);
-
-        when(solicitudRepository.findDistinctIdUsuariosByEstados(any()))
-                .thenReturn(Flux.just(25L));
-
-        when(usuarioGateway.findAllByIds(any()))
-                .thenReturn(Flux.just(buildUsuarioDemografico(25L)));
-
-        when(solicitudRepository.findDetallesByEstadosAndUsuariosPaged(any(), any(), any()))
-                .thenReturn(Mono.just(new SolicitudPageResponse<>(List.of(buildSolicitudDetalle(25L)), 1L, 0, 10)));
-
-        when(solicitudRepository.findSolicitudesAprobadasByUsuarios(any()))
-                .thenReturn(Flux.empty()); // sin aprobadas
-
-        StepVerifier.create(solicitudUseCase.listarSolicitudesPendientes(pageRequest, auth))
-                .assertNext(resp -> assertEquals(0.0, resp.getContent().get(0).getDeudaTotalMensualAprobadas()))
-                .verifyComplete();
-    }
-
-    @Test
     void listarSolicitudesPendientes_usuarioConSolicitudesAprobadasDebeCalcularDeuda() {
+        // ARRANGE
         UsuarioAutenticado auth = buildAuthUsuario();
         auth.setNombreRol("ASESOR");
         SolicitudPageRequest pageRequest = new SolicitudPageRequest(0, 10);
+        String email = null;
 
-        when(solicitudRepository.findDistinctIdUsuariosByEstados(any()))
+        when(solicitudRepository.findDistinctIdUsuariosByEstados(any(), eq(email)))
                 .thenReturn(Flux.just(25L));
 
         when(usuarioGateway.findAllByIds(any()))
@@ -306,36 +293,69 @@ class SolicitudUseCaseTest {
         when(solicitudRepository.findSolicitudesAprobadasByUsuarios(any()))
                 .thenReturn(Flux.just(aprobada));
 
-        StepVerifier.create(solicitudUseCase.listarSolicitudesPendientes(pageRequest, auth))
+        // ACT & ASSERT
+        StepVerifier.create(solicitudUseCase.listarSolicitudesPendientes(pageRequest, auth, email))
                 .assertNext(resp -> {
                     Double deuda = resp.getContent().get(0).getDeudaTotalMensualAprobadas();
-                    assertTrue(deuda > 0.0); // se calculó cuota
+                    assertTrue(deuda > 0.0, "La deuda debería ser mayor que cero si hay solicitudes aprobadas");
                 })
                 .verifyComplete();
     }
 
     @Test
     void listarSolicitudesPendientes_debeFallarCuandoServicioUsuariosDaError() {
+        // ARRANGE
         UsuarioAutenticado auth = buildAuthUsuario();
         auth.setNombreRol("ASESOR");
         SolicitudPageRequest pageRequest = new SolicitudPageRequest(0, 10);
+        String email = null;
 
-        Mockito.when(solicitudRepository.findDistinctIdUsuariosByEstados(Mockito.any()))
+        when(solicitudRepository.findDistinctIdUsuariosByEstados(any(), eq(email)))
                 .thenReturn(Flux.just(25L));
 
-        Mockito.when(usuarioGateway.findAllByIds(Mockito.any()))
+        when(usuarioGateway.findAllByIds(any()))
                 .thenReturn(Flux.error(new RuntimeException("Auth service unavailable")));
 
-        Mockito.when(solicitudRepository.findDetallesByEstadosAndUsuariosPaged(Mockito.any(), Mockito.any(), Mockito.any()))
+        when(solicitudRepository.findDetallesByEstadosAndUsuariosPaged(any(), any(), any()))
                 .thenReturn(Mono.empty());
 
-        Mockito.when(solicitudRepository.findSolicitudesAprobadasByUsuarios(Mockito.any()))
+        when(solicitudRepository.findSolicitudesAprobadasByUsuarios(any()))
                 .thenReturn(Flux.empty());
 
-        StepVerifier.create(solicitudUseCase.listarSolicitudesPendientes(pageRequest, auth))
+        StepVerifier.create(solicitudUseCase.listarSolicitudesPendientes(pageRequest, auth, email))
                 .expectErrorMatches(ex -> ex instanceof RuntimeException &&
                         ex.getMessage().equals("Auth service unavailable"))
                 .verify();
     }
+    @Test
+    void listarSolicitudesPendientes_conFiltroEmail_debeInvocarRepositorioConEmailCorrecto() {
+        // ARRANGE
+        UsuarioAutenticado auth = buildAuthUsuario();
+        auth.setNombreRol("ASESOR");
+        SolicitudPageRequest pageRequest = new SolicitudPageRequest(0, 10);
+        String emailFiltro = "usuario.filtrado@crediva.com";
 
+        // Mock para que el repositorio responda cuando se le llame CON el email correcto
+        when(solicitudRepository.findDistinctIdUsuariosByEstados(any(), eq(emailFiltro)))
+                .thenReturn(Flux.just(26L));
+
+        when(usuarioGateway.findAllByIds(any()))
+                .thenReturn(Flux.just(buildUsuarioDemografico(26L)));
+
+        when(solicitudRepository.findDetallesByEstadosAndUsuariosPaged(any(), any(), any()))
+                .thenReturn(Mono.just(new SolicitudPageResponse<>(List.of(buildSolicitudDetalle(26L)), 1L, 0, 10)));
+
+        when(solicitudRepository.findSolicitudesAprobadasByUsuarios(any()))
+                .thenReturn(Flux.empty());
+
+        // ACT & ASSERT
+        StepVerifier.create(solicitudUseCase.listarSolicitudesPendientes(pageRequest, auth, emailFiltro))
+                .assertNext(resp -> {
+                    assertEquals(1, resp.getTotalElements());
+                    assertFalse(resp.getContent().isEmpty());
+                })
+                .verifyComplete();
+
+        verify(solicitudRepository, times(1)).findDistinctIdUsuariosByEstados(any(), eq(emailFiltro));
+    }
 }

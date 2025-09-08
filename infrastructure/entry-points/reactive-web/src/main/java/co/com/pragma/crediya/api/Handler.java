@@ -4,9 +4,7 @@ import co.com.pragma.crediya.api.dto.request.CrearSolicitudRequest;
 import co.com.pragma.crediya.api.mapper.SolicitudMapper;
 import co.com.pragma.crediya.model.autenticacion.UsuarioAutenticado;
 import co.com.pragma.crediya.model.exception.BusinessException;
-import co.com.pragma.crediya.model.exception.TechnicalException;
 import co.com.pragma.crediya.model.exception.message.BusinessExceptionMessage;
-import co.com.pragma.crediya.model.exception.message.TechnicalExceptionMessage;
 import co.com.pragma.crediya.model.solicitud.Solicitud;
 import co.com.pragma.crediya.model.solicitud.SolicitudPageRequest;
 import co.com.pragma.crediya.usecase.solicitud.SolicitudUseCase;
@@ -31,23 +29,16 @@ public class Handler {
 
     public Mono<UsuarioAutenticado> principal(ServerRequest request) {
         return Mono.deferContextual(ctx -> {
-            // 1. Intenta leer del Reactor Context
             UsuarioAutenticado ctxUser = ctx.getOrDefault("AUTH_USER", null);
             log.info("[PRINCIPAL] Context -> AUTH_USER={}", ctxUser);
-
             if (ctxUser != null) {
                 return Mono.just(ctxUser);
             }
-
-            // 2. Si no está en el contexto, intenta leer de los atributos del exchange
             UsuarioAutenticado attrUser = request.exchange().getAttribute("authUser");
             log.info("[PRINCIPAL] Exchange attribute -> authUser={}", attrUser);
-
             if (attrUser != null) {
                 return Mono.just(attrUser);
             }
-
-            // 3. Si no encontró nada, lanza error explícito
             log.warn("[PRINCIPAL] No se encontró usuario en Context ni en Exchange Attributes");
             return Mono.error(new BusinessException(BusinessExceptionMessage.USER_NOT_FOUND));
         });
@@ -86,7 +77,7 @@ public class Handler {
                     SolicitudPageRequest pr = tuple.getT1();
                     UsuarioAutenticado auth = tuple.getT2();
 
-                    return useCase.listarSolicitudesPendientes(pr, auth, email); // <-- ahora el auth viaja al caso de uso
+                    return useCase.listarSolicitudesPendientes(pr, auth, email);
                 })
                 .flatMap(response -> ServerResponse.ok()
                         .contentType(MediaType.APPLICATION_JSON)
