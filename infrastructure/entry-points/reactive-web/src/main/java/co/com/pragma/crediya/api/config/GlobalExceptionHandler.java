@@ -47,7 +47,6 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Throwable.class)
     public ProblemDetail handleAny(Throwable ex, ServerWebExchange exchange) {
         if (isSwagger(exchange)) {
-            // Deja que springdoc/recursos estáticos manejen su propia excepción
             if (ex instanceof RuntimeException re) throw re;
             throw new RuntimeException(ex);
         }
