@@ -1,8 +1,8 @@
 server:
-  port: 8081
+  port: ${SERVER_PORT:8081}
 spring:
   application:
-    name: "solicitudes"
+    name: ${APP_NAME:solicitudes}
   devtools:
     add-properties: false
   h2:
@@ -30,22 +30,22 @@ management:
     circuitbreakers:
       enabled: true
 cors:
-  allowed-origins: "http://localhost:4200,http://localhost:8080"
+  allowed-origins: ${ALLOWED_ORIGINS:http://localhost:4200,http://localhost:8080,http://localhost:8081} #http://localhost:4200
 routes:
   paths:
     solicitud: "/api/v1/solicitud"
 adapters:
   r2dbc:
-    host: "localhost"
-    port: 5432
-    database: "Autenticacion"
-    schema: "crediya"
-    username: "postgres"
-    password: "root"
+    host: ${SPRING_R2DBC_URL:localhost} #localhost
+    port: ${SPRING_R2DBC_PORT:5432} #5432
+    database: ${SPRING_R2DBC_DB_NAME:Autenticacion} #Autenticacion
+    schema: ${SPRING_R2DBC_SCHEMA:crediya} #crediya
+    username: ${SPRING_R2DBC_USERNAME:postgres} #postgres
+    password: ${SPRING_R2DBC_PASSWORD:root} #root
 adapter:
   restconsumer:
     timeout: 50000
-    url: "http://localhost:8080/api/v1"
+    url: ${AUTH_BASE_URL:http://localhost:8080/api/v1} # http://localhost:8080/api/v1
 resilience4j:
   circuitbreaker:
     instances:

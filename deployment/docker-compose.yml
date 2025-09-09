@@ -1,0 +1,87 @@
+version: "3.8"
+
+# Red compartida para que todos los servicios se comuniquen entre sí.
+networks:
+  crediya-net:
+    driver: bridge
+
+services:
+  # ------ SERVICIOS DE AUTENTICACIÓN ------
+  auth-db:
+    image: postgres:15-alpine
+    container_name: autenticacion-crediya-db
+    environment:
+      POSTGRES_DB: autenticacion-crediya
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: root
+    ports:
+      - "5433:5432"
+    volumes:
+      # Ruta relativa desde la ubicación del docker-compose.yml
+      - ./autenticacion-service/deployment/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - crediya-net
+    restart: unless-stopped
+
+  autenticacion:
+    build:
+      # El contexto es la carpeta raíz del microservicio de autenticación.
+      context: ./autenticacion-service
+      # La ruta al Dockerfile es relativa al contexto definido arriba.
+      dockerfile: deployment/Dockerfile
+    container_name: crediya-autenticacion
+    depends_on:
+      - auth-db
+    environment:
+      SPRING_R2DBC_URL: auth-db
+      SPRING_R2DBC_PORT: 5432
+      SPRING_R2DBC_DB_NAME: autenticacion-crediya
+      SPRING_R2DBC_SCHEMA: crediya
+      SPRING_R2DBC_USERNAME: postgres
+      SPRING_R2DBC_PASSWORD: root
+    ports:
+      - "8080:8080"
+    networks:
+      - crediya-net
+    restart: unless-stopped
+
+  # ------ SERVICIOS DE SOLICITUDES ------
+  solicitudes-db:
+    image: postgres:15-alpine
+    container_name: solicitudes-crediya-db
+    environment:
+      POSTGRES_DB: solicitudes-crediya
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: root
+    ports:
+      - "5434:5432"
+    volumes:
+      # Ruta relativa desde la ubicación del docker-compose.yml
+      - ./solicitudes-service/deployment/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - crediya-net
+    restart: unless-stopped
+
+  solicitudes:
+    build:
+      # El contexto es la carpeta raíz del microservicio de solicitudes.
+      context: ./solicitudes-service
+      # La ruta al Dockerfile es relativa al contexto definido arriba.
+      dockerfile: deployment/Dockerfile
+    container_name: crediya-solicitudes
+    depends_on:
+      - solicitudes-db
+      - autenticacion
+    environment:
+      SPRING_R2DBC_URL: solicitudes-db
+      SPRING_R2DBC_PORT: 5432
+      SPRING_R2DBC_DB_NAME: solicitudes-crediya
+      SPRING_R2DBC_SCHEMA: crediya
+      SPRING_R2DBC_USERNAME: postgres
+      SPRING_R2DBC_PASSWORD: root
+      AUTH_BASE_URL: http://autenticacion:8080/api/v1
+    ports:
+      - "8081:8081"
+    networks:
+      - crediya-net
+    restart: unless-stopped
