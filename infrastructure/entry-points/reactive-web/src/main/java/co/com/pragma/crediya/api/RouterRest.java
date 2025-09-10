@@ -25,6 +25,7 @@ import org.springframework.web.reactive.function.server.ServerResponse;
 
 import static org.springframework.web.reactive.function.server.RequestPredicates.GET;
 import static org.springframework.web.reactive.function.server.RequestPredicates.POST;
+import static org.springframework.web.reactive.function.server.RequestPredicates.PUT;
 import static org.springframework.web.reactive.function.server.RouterFunctions.route;
 
 @Configuration
@@ -32,7 +33,6 @@ import static org.springframework.web.reactive.function.server.RouterFunctions.r
 public class RouterRest {
 
     private final SolicitudPath solicitudPath;
-    private final Handler solicitudHandler;
 
     @Bean
     @RouterOperations({
@@ -130,11 +130,76 @@ public class RouterRest {
                             },
                             security = { @SecurityRequirement(name = "bearerAuth") }
                     )
+            ),
+            @RouterOperation(
+                    path = "/api/v1/solicitud/update",
+                    produces = { MediaType.APPLICATION_JSON_VALUE },
+                    method = RequestMethod.PUT,
+                    beanClass = Handler.class,
+                    beanMethod = "actualizarEstado",
+                    operation = @Operation(
+                            operationId = "actualizarEstadoSolicitud",
+                            summary = "Actualizar estado de una solicitud",
+                            description = """
+                        Permite a un usuario con rol **ASESOR** cambiar el estado de una solicitud a
+                        **APROBADO** o **RECHAZADO**. 
+                        En caso exitoso, retorna los datos del solicitante (usuario) asociados a la solicitud.
+                        """,
+                            requestBody = @RequestBody(
+                                    required = true,
+                                    content = @Content(
+                                            schema = @Schema(
+                                                    implementation = co.com.pragma.crediya.api.dto.request.SolicitudCambioEstadoRequest.class,
+                                                    description = "Cuerpo para cambiar el estado. `estado` debe ser APROBADO o RECHAZADO."
+                                            ),
+                                            examples = {
+                                                    @ExampleObject(
+                                                            name = "Aprobar",
+                                                            value = """
+                                                {
+                                                  "idSolicitud": 31,
+                                                  "estado": "APROBADO"
+                                                }"""
+                                                    )
+                                            }
+                                    )
+                            ),
+                            responses = {
+                                    @ApiResponse(
+                                            responseCode = "200",
+                                            description = "Estado actualizado correctamente. Se retorna el solicitante.",
+                                            content = @Content(
+                                                    schema = @Schema(implementation = co.com.pragma.crediya.model.usuario.UsuarioDemografico.class),
+                                                    examples = @ExampleObject(
+                                                            name = "UsuarioSolicitante",
+                                                            value = """
+                                                {
+                                                  "idUsuario": 25,
+                                                  "nombres": "Camilo",
+                                                  "apellidos": "Gómez",
+                                                  "correoElectronico": "camilo.gomez@example.com",
+                                                  "documentoIdentidad": "1023456789",
+                                                  "fechaNacimiento": "1990-05-11T19:00:00.000-05:00",
+                                                  "telefono": "+57 3124567890",
+                                                  "idRol": 3,
+                                                  "direccion": "Carrera 10 #25-30, Bogotá",
+                                                  "salarioBase": 2800000.0
+                                                }"""
+                                                    )
+                                            )
+                                    ),
+                                    @ApiResponse(responseCode = "400", description = "Error de negocio o validación (por ejemplo, rol inválido, estado inválido, solicitud no encontrada)."),
+                                    @ApiResponse(responseCode = "401", description = "No autorizado. Se requiere autenticación con Bearer token."),
+                                    @ApiResponse(responseCode = "500", description = "Error interno del servidor.")
+                            },
+                            security = { @SecurityRequirement(name = "bearerAuth") }
+                    )
             )
     })
     public RouterFunction<ServerResponse> routerFunction(Handler handler) {
         return route(POST(solicitudPath.getSolicitud()), handler::listenSaveSolicitud)
-                .andRoute(GET(solicitudPath.getListSolicitud()), handler::listarSolicitudes);
+                .andRoute(GET(solicitudPath.getListSolicitud()), handler::listarSolicitudes)
+                .andRoute(PUT(solicitudPath.getUpdateSolicitud()), handler::actualizarEstado);
     }
 
 }

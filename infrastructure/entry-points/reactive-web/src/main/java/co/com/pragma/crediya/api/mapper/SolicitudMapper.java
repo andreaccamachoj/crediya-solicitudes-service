@@ -1,8 +1,10 @@
 package co.com.pragma.crediya.api.mapper;
 
 import co.com.pragma.crediya.api.dto.request.CrearSolicitudRequest;
+import co.com.pragma.crediya.api.dto.request.SolicitudCambioEstadoRequest;
 import co.com.pragma.crediya.api.dto.response.SolicitudResponse;
 import co.com.pragma.crediya.model.solicitud.Solicitud;
+import co.com.pragma.crediya.model.solicitud.SolicitudEstado;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.NullValueCheckStrategy;
@@ -19,4 +21,6 @@ public interface SolicitudMapper {
     Solicitud toDomain(CrearSolicitudRequest crearSolicitudRequest);
 
     SolicitudResponse toResponse(Solicitud solicitud);
+
+    SolicitudEstado toDomainFromCambioEstadoRequest(SolicitudCambioEstadoRequest solicitud);
 }

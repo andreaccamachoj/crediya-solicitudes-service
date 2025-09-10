@@ -5,18 +5,17 @@ import co.com.pragma.crediya.model.exception.BusinessException;
 import co.com.pragma.crediya.model.exception.ValidationException;
 import co.com.pragma.crediya.model.exception.message.BusinessExceptionMessage;
 import co.com.pragma.crediya.model.exception.message.ValidationExceptionMessage;
-import co.com.pragma.crediya.model.solicitud.Solicitud;
-import co.com.pragma.crediya.model.solicitud.SolicitudDetalle;
-import co.com.pragma.crediya.model.solicitud.SolicitudPageRequest;
-import co.com.pragma.crediya.model.solicitud.SolicitudPageResponse;
+import co.com.pragma.crediya.model.solicitud.*;
 import co.com.pragma.crediya.model.solicitud.gateways.SolicitudRepository;
 import co.com.pragma.crediya.model.estados.gateways.EstadosRepository;
+import co.com.pragma.crediya.model.sqs.gateways.NotificacionEventPublisher;
 import co.com.pragma.crediya.model.tipoprestamo.gateways.TipoPrestamoRepository;
 import co.com.pragma.crediya.model.usuario.Usuario;
 import co.com.pragma.crediya.model.usuario.UsuarioDemografico;
 import co.com.pragma.crediya.model.usuario.gateways.UsuarioGateway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -34,6 +33,7 @@ class SolicitudUseCaseTest {
     private TipoPrestamoRepository tipoPrestamoRepository;
     private EstadosRepository estadoRepository;
     private UsuarioGateway usuarioGateway;
+    private NotificacionEventPublisher notificacionEventPublisher;
 
     private SolicitudUseCase solicitudUseCase;
 
@@ -43,9 +43,10 @@ class SolicitudUseCaseTest {
         tipoPrestamoRepository = Mockito.mock(TipoPrestamoRepository.class);
         estadoRepository = Mockito.mock(EstadosRepository.class);
         usuarioGateway = Mockito.mock(UsuarioGateway.class);
+        notificacionEventPublisher = Mockito.mock(NotificacionEventPublisher.class);
 
         solicitudUseCase = new SolicitudUseCase(
-                solicitudRepository, tipoPrestamoRepository, estadoRepository, usuarioGateway);
+                solicitudRepository, tipoPrestamoRepository, estadoRepository, usuarioGateway, notificacionEventPublisher);
     }
 
     private Solicitud buildSolicitudValida() {
@@ -77,6 +78,18 @@ class SolicitudUseCaseTest {
     private UsuarioDemografico buildUsuarioDemografico(Long idUsuario) {
         return new UsuarioDemografico(idUsuario, "Camilo", "Gómez", "correo@example.com",
                 "123", null, "3124567890", 2L, "Bogotá", 2_800_000D);
+    }
+
+    private UsuarioAutenticado buildAuthAsesor() {
+        return new UsuarioAutenticado(10L, "asesor@empresa.com", 99L, "ASESOR");
+    }
+
+    private SolicitudEstado buildSolicitudEstado(Long id, String estado) {
+        // Usa builder si tu clase lo tiene; de lo contrario ajusta a setters/constructor
+        return SolicitudEstado.builder()
+                .idSolicitud(id)
+                .estado(estado)
+                .build();
     }
 
     // METODO: crearSolicitud
@@ -357,5 +370,208 @@ class SolicitudUseCaseTest {
                 .verifyComplete();
 
         verify(solicitudRepository, times(1)).findDistinctIdUsuariosByEstados(any(), eq(emailFiltro));
+    }
+
+
+    // METODO: actualizarEstado
+
+    @Test
+    void actualizarEstadoSolicitud_exito() {
+        // Arrange
+        var req = buildSolicitudEstado(1L, "  aprobado  "); // probar trim + upper
+        var auth = buildAuthAsesor();
+        var detalleActualizado = buildSolicitudDetalle(123L);
+
+        when(solicitudRepository.findById(1L)).thenReturn(Mono.just(buildSolicitudValida()));
+        when(estadoRepository.findIdByNombre("APROBADO")).thenReturn(Mono.just(7L));
+        when(solicitudRepository.updateEstado(1L, 7L)).thenReturn(Mono.empty());
+        when(solicitudRepository.findDetallesByIdSolicitud(1L)).thenReturn(Mono.just(detalleActualizado));
+        when(notificacionEventPublisher.send(detalleActualizado)).thenReturn(Mono.empty());
+
+        // Act & Assert
+        StepVerifier.create(solicitudUseCase.actualizarEstadoSolicitud(req, auth))
+                .expectNext(detalleActualizado)
+                .verifyComplete();
+
+        verify(solicitudRepository).findById(1L);
+        verify(estadoRepository).findIdByNombre("APROBADO");
+        verify(solicitudRepository).updateEstado(1L, 7L);
+        verify(solicitudRepository).findDetallesByIdSolicitud(1L);
+        verify(notificacionEventPublisher).send(detalleActualizado);
+    }
+
+    @Test
+    void actualizarEstadoSolicitud_enviaEstadoUpperTrim() {
+        // Arrange
+        var req = buildSolicitudEstado(1L, "  pendiente de revisión "); // debería llamar con "PENDIENTE DE REVISIÓN"
+        var auth = buildAuthAsesor();
+
+        when(solicitudRepository.findById(1L)).thenReturn(Mono.just(buildSolicitudValida()));
+        when(estadoRepository.findIdByNombre(anyString())).thenReturn(Mono.just(2L));
+        when(solicitudRepository.updateEstado(1L, 2L)).thenReturn(Mono.empty());
+        when(solicitudRepository.findDetallesByIdSolicitud(1L)).thenReturn(Mono.just(buildSolicitudDetalle(5L)));
+        when(notificacionEventPublisher.send(any())).thenReturn(Mono.empty());
+
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+
+        // Act
+        StepVerifier.create(solicitudUseCase.actualizarEstadoSolicitud(req, auth))
+                .expectNextCount(1)
+                .verifyComplete();
+
+        // Assert
+        verify(estadoRepository).findIdByNombre(captor.capture());
+        assertEquals("PENDIENTE DE REVISIÓN", captor.getValue());
+    }
+
+    // =============== VALIDACIONES (rol/inputs) ===============
+
+    @Test
+    void actualizarEstadoSolicitud_fallaPorRolNoAsesor() {
+        var req = buildSolicitudEstado(1L, "APROBADO");
+        var authNoAsesor = buildAuthUsuario(); // tu helper devuelve rol CLIENTE
+
+        StepVerifier.create(solicitudUseCase.actualizarEstadoSolicitud(req, authNoAsesor))
+                .expectErrorSatisfies(err -> {
+                    assertInstanceOf(BusinessException.class, err);
+                    assertEquals(BusinessExceptionMessage.ROL_NOT_FOUND.getMessage(), err.getMessage());
+                })
+                .verify();
+
+        verifyNoInteractions(solicitudRepository, estadoRepository, notificacionEventPublisher);
+    }
+
+    @Test
+    void actualizarEstadoSolicitud_fallaPorIdSolicitudNull() {
+        var req = buildSolicitudEstado(null, "APROBADO");
+        var auth = buildAuthAsesor();
+
+        StepVerifier.create(solicitudUseCase.actualizarEstadoSolicitud(req, auth))
+                .expectErrorSatisfies(err -> {
+                    assertInstanceOf(ValidationException.class, err);
+                    assertEquals(ValidationExceptionMessage.STATE_REQUIRED.getMessage(), err.getMessage());
+                })
+                .verify();
+
+        verifyNoInteractions(solicitudRepository, estadoRepository, notificacionEventPublisher);
+    }
+
+    @Test
+    void actualizarEstadoSolicitud_fallaPorEstadoNull() {
+        var req = buildSolicitudEstado(1L, null);
+        var auth = buildAuthAsesor();
+
+        StepVerifier.create(solicitudUseCase.actualizarEstadoSolicitud(req, auth))
+                .expectErrorSatisfies(err -> {
+                    assertInstanceOf(ValidationException.class, err);
+                    assertEquals(ValidationExceptionMessage.STATE_REQUIRED.getMessage(), err.getMessage());
+                })
+                .verify();
+
+        verifyNoInteractions(solicitudRepository, estadoRepository, notificacionEventPublisher);
+    }
+
+    // =============== NO ENCONTRADOS ===============
+
+    @Test
+    void actualizarEstadoSolicitud_fallaSolicitudNoExiste() {
+        var req = buildSolicitudEstado(1L, "APROBADO");
+        var auth = buildAuthAsesor();
+
+        when(solicitudRepository.findById(1L)).thenReturn(Mono.empty());
+        when(estadoRepository.findIdByNombre("APROBADO")).thenReturn(Mono.never());
+
+        StepVerifier.create(solicitudUseCase.actualizarEstadoSolicitud(req, auth))
+                .expectErrorSatisfies(err -> {
+                    assertInstanceOf(BusinessException.class, err);
+                    assertEquals(BusinessExceptionMessage.REQUEST_NOT_FOUND.getMessage(), err.getMessage());
+                })
+                .verify();
+
+        verify(solicitudRepository).findById(1L);
+        verify(estadoRepository).findIdByNombre("APROBADO");
+        verifyNoInteractions(notificacionEventPublisher);
+    }
+
+
+    @Test
+    void actualizarEstadoSolicitud_fallaEstadoDestinoNoExiste() {
+        var req = buildSolicitudEstado(1L, "APROBADO");
+        var auth = buildAuthAsesor();
+
+        when(solicitudRepository.findById(1L)).thenReturn(Mono.just(buildSolicitudValida()));
+        when(estadoRepository.findIdByNombre("APROBADO")).thenReturn(Mono.empty());
+
+        StepVerifier.create(solicitudUseCase.actualizarEstadoSolicitud(req, auth))
+                .expectErrorSatisfies(err -> {
+                    assertInstanceOf(BusinessException.class, err);
+                    assertEquals(BusinessExceptionMessage.STATE_NOT_FOUND.getMessage(), err.getMessage());
+                })
+                .verify();
+
+        verify(solicitudRepository).findById(1L);
+        verify(estadoRepository).findIdByNombre("APROBADO");
+        verifyNoMoreInteractions(solicitudRepository, estadoRepository);
+        verifyNoInteractions(notificacionEventPublisher);
+    }
+
+    @Test
+    void actualizarEstadoSolicitud_fallaSiNoHayDetalleLuegoDeActualizar() {
+        var req = buildSolicitudEstado(1L, "APROBADO");
+        var auth = buildAuthAsesor();
+
+        when(solicitudRepository.findById(1L)).thenReturn(Mono.just(buildSolicitudValida()));
+        when(estadoRepository.findIdByNombre("APROBADO")).thenReturn(Mono.just(5L));
+        when(solicitudRepository.updateEstado(1L, 5L)).thenReturn(Mono.empty());
+        when(solicitudRepository.findDetallesByIdSolicitud(1L)).thenReturn(Mono.empty());
+
+        StepVerifier.create(solicitudUseCase.actualizarEstadoSolicitud(req, auth))
+                .expectErrorSatisfies(err -> {
+                    assertInstanceOf(BusinessException.class, err);
+                    assertEquals(BusinessExceptionMessage.REQUEST_NOT_FOUND.getMessage(), err.getMessage());
+                })
+                .verify();
+
+        verify(notificacionEventPublisher, never()).send(any());
+    }
+
+    // =============== ERRORES NO CONTROLADOS -> UNEXPECTED_ERROR ===============
+
+    @Test
+    void actualizarEstadoSolicitud_envuelveErroresEnUnexpected() {
+        var req = buildSolicitudEstado(1L, "APROBADO");
+        var auth = buildAuthAsesor();
+
+        when(solicitudRepository.findById(1L)).thenReturn(Mono.just(buildSolicitudValida()));
+        when(estadoRepository.findIdByNombre("APROBADO")).thenReturn(Mono.just(9L));
+        when(solicitudRepository.updateEstado(1L, 9L)).thenReturn(Mono.error(new RuntimeException("DB down")));
+
+        StepVerifier.create(solicitudUseCase.actualizarEstadoSolicitud(req, auth))
+                .expectErrorSatisfies(err -> {
+                    assertInstanceOf(BusinessException.class, err);
+                    assertEquals(BusinessExceptionMessage.UNEXPECTED_ERROR.getMessage(), err.getMessage());
+                })
+                .verify();
+    }
+
+    @Test
+    void actualizarEstadoSolicitud_unexpectedErrorEnPublisher() {
+        var req = buildSolicitudEstado(1L, "APROBADO");
+        var auth = buildAuthAsesor();
+        var detalle = buildSolicitudDetalle(222L);
+
+        when(solicitudRepository.findById(1L)).thenReturn(Mono.just(buildSolicitudValida()));
+        when(estadoRepository.findIdByNombre("APROBADO")).thenReturn(Mono.just(3L));
+        when(solicitudRepository.updateEstado(1L, 3L)).thenReturn(Mono.empty());
+        when(solicitudRepository.findDetallesByIdSolicitud(1L)).thenReturn(Mono.just(detalle));
+        when(notificacionEventPublisher.send(detalle)).thenReturn(Mono.error(new RuntimeException("SNS/SES down")));
+
+        StepVerifier.create(solicitudUseCase.actualizarEstadoSolicitud(req, auth))
+                .expectErrorSatisfies(err -> {
+                    assertInstanceOf(BusinessException.class, err);
+                    assertEquals(BusinessExceptionMessage.UNEXPECTED_ERROR.getMessage(), err.getMessage());
+                })
+                .verify();
+
     }
 }

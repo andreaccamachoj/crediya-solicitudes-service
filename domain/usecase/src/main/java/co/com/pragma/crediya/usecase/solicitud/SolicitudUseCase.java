@@ -4,10 +4,12 @@ import co.com.pragma.crediya.enums.RolNombre;
 import co.com.pragma.crediya.model.autenticacion.UsuarioAutenticado;
 import co.com.pragma.crediya.model.estados.gateways.EstadosRepository;
 import co.com.pragma.crediya.model.exception.BusinessException;
+import co.com.pragma.crediya.model.exception.ValidationException;
 import co.com.pragma.crediya.model.exception.message.BusinessExceptionMessage;
 import co.com.pragma.crediya.model.exception.message.ValidationExceptionMessage;
 import co.com.pragma.crediya.model.solicitud.*;
 import co.com.pragma.crediya.model.solicitud.gateways.SolicitudRepository;
+import co.com.pragma.crediya.model.sqs.gateways.NotificacionEventPublisher;
 import co.com.pragma.crediya.model.tipoprestamo.gateways.TipoPrestamoRepository;
 import co.com.pragma.crediya.model.usuario.Usuario;
 import co.com.pragma.crediya.model.usuario.UsuarioDemografico;
@@ -31,6 +33,7 @@ public class SolicitudUseCase {
     private final TipoPrestamoRepository tipoPrestamoRepository;
     private final EstadosRepository estadoRepository;
     private final UsuarioGateway usuarioGateway;
+    private final NotificacionEventPublisher notificacionEventPublisher;
 
     private final List<String> estados = List.of("PENDIENTE DE REVISIÓN", "RECHAZADO", "REVISION MANUAL");
 
@@ -122,8 +125,6 @@ public class SolicitudUseCase {
                 });
     }
 
-
-
     private Mono<Map<Long, Double>> calcularDeudaMensualAprobadaPorUsuarios(List<Long> usuarios) {
         return solicitudRepository.findSolicitudesAprobadasByUsuarios(usuarios)
                 .filter(d -> d.getIdusuario() != null)
@@ -147,5 +148,49 @@ public class SolicitudUseCase {
             return monto * r / (1 - Math.pow(1 + r, -plazo));
         }
         return monto / plazo;
+    }
+
+    public Mono<SolicitudDetalle> actualizarEstadoSolicitud(
+            SolicitudEstado req,
+            UsuarioAutenticado auth
+    ) {
+        return validarSolicitudUpdate(req, auth)
+                .flatMap(validReq -> {
+
+                    Mono<Solicitud> solicitudMono = solicitudRepository.findById(validReq.getIdSolicitud())
+                            .switchIfEmpty(Mono.error(new BusinessException(BusinessExceptionMessage.REQUEST_NOT_FOUND)));
+
+                    Mono<Long> idEstadoMono = estadoRepository.findIdByNombre(validReq.getEstado().trim().toUpperCase())
+                            .switchIfEmpty(Mono.error(new BusinessException(BusinessExceptionMessage.STATE_NOT_FOUND)));
+
+                    return Mono.zip(solicitudMono, idEstadoMono)
+                            .flatMap(tuple -> {
+                                Long idEstadoDestino = tuple.getT2();
+                                return solicitudRepository.updateEstado(validReq.getIdSolicitud(), idEstadoDestino)
+                                        .then(
+                                                solicitudRepository.findDetallesByIdSolicitud(validReq.getIdSolicitud())
+                                                        .switchIfEmpty(Mono.error(new BusinessException(BusinessExceptionMessage.REQUEST_NOT_FOUND)))
+                                                        .flatMap(solicitudActualizada ->
+                                                                notificacionEventPublisher.send(solicitudActualizada)
+                                                                        .thenReturn(solicitudActualizada)
+                                                        )
+                                        );
+                            });
+                })
+                .onErrorMap(e -> (e instanceof BusinessException || e instanceof ValidationException) ? e
+                        : new BusinessException(BusinessExceptionMessage.UNEXPECTED_ERROR));
+    }
+
+    private Mono<SolicitudEstado> validarSolicitudUpdate(SolicitudEstado req, UsuarioAutenticado auth) {
+        if (!RolNombre.ASESOR.getNombre().equalsIgnoreCase(auth.getNombreRol())) {
+            return Mono.error(new BusinessException(BusinessExceptionMessage.ROL_NOT_FOUND));
+        }
+
+        return ValidationHelper.validateAll(List.of(
+                () -> ValidationHelper.validateCondition(req.getIdSolicitud() != null,
+                        ValidationExceptionMessage.STATE_REQUIRED),
+                () -> ValidationHelper.validateCondition(req.getEstado() != null,
+                        ValidationExceptionMessage.STATE_REQUIRED)
+        )).thenReturn(req);
     }
 }

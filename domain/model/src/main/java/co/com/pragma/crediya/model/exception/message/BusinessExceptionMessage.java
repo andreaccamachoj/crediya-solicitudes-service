@@ -27,8 +27,14 @@ public enum BusinessExceptionMessage {
             "403",
             "No puede crear una solicitud en nombre de otro usuario. Debe usar su propia identidad."
     ),
-    ROL_NOT_ASESOR("BUS0009","Rol not found","404",
-            "Este rol no tiene permitido listar las solicitudes.");
+    ROL_NOT_ASESOR("BUS0012","Rol not found","404",
+            "Este rol no tiene permitido listar las solicitudes."),
+    REQUEST_NOT_FOUND("BUS0010","Request not found","404",
+            "El idsolicitud enviado no existe."),
+    UPDATE_FAILED("BUS0011","Update failed","404",
+            "Fallo al actualizar la solicitud."),
+    UNEXPECTED_ERROR("BUS0012","UNEXPECTED ERROR","404",
+            "Ocurrio un error inesperado.");
 
     private final String code;
     private final String description;
