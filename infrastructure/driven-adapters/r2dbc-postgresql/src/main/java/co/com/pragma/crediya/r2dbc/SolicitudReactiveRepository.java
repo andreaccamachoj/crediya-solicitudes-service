@@ -69,4 +69,29 @@ public interface SolicitudReactiveRepository extends ReactiveCrudRepository<Soli
              AND s.id_usuario IN (:usuarios)
            """)
     Mono<Long> countByEstadosAndUsuarios(@Param("estados") List<String> estados, @Param("usuarios") List<Long> usuarios);
+
+    @Query("""
+        UPDATE crediya.solicitud
+           SET id_estado = :idEstado
+         WHERE id_solicitud = :idSolicitud
+    """)
+    Mono<Integer> updateEstado(@Param("idSolicitud") Long idSolicitud,
+                               @Param("idEstado") Long idEstado);
+
+
+    @Query("""
+       SELECT s.id_solicitud AS idSolicitud,
+              s.monto,
+              s.plazo,
+              s.email,
+              s.id_usuario AS idUsuario,
+              tp.nombre AS tipoPrestamo,
+              tp.tasa_interes AS tasaInteres,
+              e.nombre AS estado
+       FROM crediya.solicitud s
+       JOIN crediya.estados e ON s.id_estado = e.id_estado
+       JOIN crediya.tipo_prestamo tp ON s.id_tipo_prestamo = tp.id_tipo_prestamo
+       WHERE s.id_solicitud IN (:idSolicitud)
+       """)
+    Mono<SolicitudDetalle> findDetallesByIdSolicitud(@Param("idSolicitud") Long idSolicitud);
 }

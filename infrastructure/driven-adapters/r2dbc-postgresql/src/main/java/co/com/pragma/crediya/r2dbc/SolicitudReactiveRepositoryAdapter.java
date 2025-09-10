@@ -87,5 +87,30 @@ public class SolicitudReactiveRepositoryAdapter extends ReactiveAdapterOperation
                 .doOnError(e -> log.error("Error al buscar solicitudes aprobadas para usuarios: {}", usuarios, e));
     }
 
+    @Override
+    public Mono<Integer> updateEstado(Long idSolicitud, Long idEstado) {
+        return repository.updateEstado(idSolicitud, idEstado)
+                .doOnSubscribe(s -> log.info("[DB] updateEstado sol={} -> estado={}", idSolicitud, idEstado))
+                .doOnNext(r -> log.debug("[DB] rowsAffected={}", r))
+                .doOnError(e -> log.error("[DB] updateEstado error sol={}", idSolicitud, e));
+    }
+
+    @Override
+    public Mono<SolicitudDetalle> findDetallesByIdSolicitud(Long idSolicitud) {
+        return repository.findDetallesByIdSolicitud(idSolicitud)
+                .doOnSubscribe(s -> log.info("[DB] findById({})", idSolicitud))
+                .doOnNext(s -> log.debug("[DB] found={}", s))
+                .doOnError(e -> log.error("[DB] findById error id={}", idSolicitud, e));
+    }
+
+    @Override
+    public Mono<Solicitud> findById(Long idSolicitud) {
+        return repository.findById(BigInteger.valueOf(idSolicitud))
+                .map(entity -> mapper.map(entity, Solicitud.class))
+                .doOnSubscribe(s -> log.info("[DB] findById({})", idSolicitud))
+                .doOnNext(s -> log.debug("[DB] found={}", s))
+                .doOnError(e -> log.error("[DB] findById error id={}", idSolicitud, e));
+    }
+
 
 }

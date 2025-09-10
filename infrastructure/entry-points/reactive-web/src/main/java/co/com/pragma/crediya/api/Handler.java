@@ -1,6 +1,7 @@
 package co.com.pragma.crediya.api;
 
 import co.com.pragma.crediya.api.dto.request.CrearSolicitudRequest;
+import co.com.pragma.crediya.api.dto.request.SolicitudCambioEstadoRequest;
 import co.com.pragma.crediya.api.mapper.SolicitudMapper;
 import co.com.pragma.crediya.model.autenticacion.UsuarioAutenticado;
 import co.com.pragma.crediya.model.exception.BusinessException;
@@ -17,6 +18,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Mono;
+
+import java.util.Map;
 
 @Component
 @RequiredArgsConstructor
@@ -83,5 +86,22 @@ public class Handler {
                         .contentType(MediaType.APPLICATION_JSON)
                         .bodyValue(response));
     }
-}
 
+    public Mono<ServerResponse> actualizarEstado(ServerRequest req) {
+        Mono<SolicitudCambioEstadoRequest> bodyMono = req.bodyToMono(SolicitudCambioEstadoRequest.class);
+        Mono<UsuarioAutenticado> authMono = principal(req);
+
+        return Mono.zip(bodyMono, authMono)
+                .doOnSubscribe(s -> log.info("[PUT] /api/v1/solicitud cambio de estado - iniciando"))
+                .flatMap(t -> useCase.actualizarEstadoSolicitud(mapper.toDomainFromCambioEstadoRequest(t.getT1()) , t.getT2()))
+                .flatMap(resp -> ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValue(resp))
+                .doOnSuccess(r -> log.info("[PUT] /api/v1/solicitud OK"))
+                .onErrorResume(e -> {
+                    log.error("[PUT] unexpected error", e);
+                    return ServerResponse.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .bodyValue(Map.of("error", "Ocurrió un problema procesando la solicitud"));
+                });
+    }
+
+}

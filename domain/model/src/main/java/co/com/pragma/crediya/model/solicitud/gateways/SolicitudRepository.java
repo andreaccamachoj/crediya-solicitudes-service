@@ -15,4 +15,7 @@ public interface SolicitudRepository {
     public Mono<SolicitudPageResponse<SolicitudDetalle>> findDetallesByEstadosAndUsuariosPaged(
             List<String> estados, List<Long> usuarios, SolicitudPageRequest pageRequest);
     public Flux<SolicitudDetalle> findSolicitudesAprobadasByUsuarios(List<Long> usuarios);
+    Mono<Integer> updateEstado(Long idSolicitud, Long idEstado);
+    Mono<SolicitudDetalle> findDetallesByIdSolicitud(Long idSolicitud);
+    public Mono<Solicitud> findById(Long idSolicitud);
 }
