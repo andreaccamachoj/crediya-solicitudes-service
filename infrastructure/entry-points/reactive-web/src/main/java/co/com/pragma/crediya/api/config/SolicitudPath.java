@@ -11,4 +11,5 @@ public class SolicitudPath {
     private String solicitud;
     private String listSolicitud = "/api/v1/solicitud/listar";
     private String updateSolicitud = "/api/v1/solicitud/update";
+    private String calculateCapacidad = "/api/v1/calcular-capacidad";
 }

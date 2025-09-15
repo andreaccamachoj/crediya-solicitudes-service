@@ -1,7 +1,8 @@
 package co.com.pragma.crediya.sqs.sender;
 
-import co.com.pragma.crediya.model.sqs.gateways.NotificacionEventPublisher;
-import co.com.pragma.crediya.sqs.sender.config.SQSSenderProperties;
+import co.com.pragma.crediya.model.sqs.CapacidadLambdaRequest;
+import co.com.pragma.crediya.model.sqs.gateways.CapacidadEventPublisher;
+import co.com.pragma.crediya.sqs.sender.config.properties.SQSCapacidadProperties;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -15,25 +16,25 @@ import software.amazon.awssdk.services.sqs.model.SendMessageResponse;
 @Service
 @Log4j2
 @RequiredArgsConstructor
-public class SQSSender implements NotificacionEventPublisher {
-    private final SQSSenderProperties properties;
+public class SQSCapacidadSender implements CapacidadEventPublisher {
+
+    private final SQSCapacidadProperties properties;
     private final SqsAsyncClient client;
     private final ObjectMapper objectMapper;
 
     @Override
-    public Mono<String> send(Object messagePayload) {
-        return Mono.fromCallable(() -> objectMapper.writeValueAsString(messagePayload))
+    public Mono<String> send(CapacidadLambdaRequest request) {
+        return Mono.fromCallable(() -> objectMapper.writeValueAsString(request))
                 .onErrorMap(JsonProcessingException.class,
-                        e -> new RuntimeException("Error de serialización para SQS", e))
+                        e -> new RuntimeException("Error de serialización para SQS capacidad", e))
                 .flatMap(this::sendMessageToQueue)
-                .doOnError(e -> log.error("Fallo el envío del mensaje a SQS. Payload: {}", messagePayload, e));
+                .doOnError(e -> log.error("Fallo el envío del mensaje a SQS (capacidad). Payload: {}", request, e));
     }
-
 
     private Mono<String> sendMessageToQueue(String messageBody) {
         return Mono.fromCallable(() -> buildRequest(messageBody))
                 .flatMap(request -> Mono.fromFuture(client.sendMessage(request)))
-                .doOnSuccess(response -> log.info("Mensaje enviado a SQS con éxito. MessageId: {}", response.messageId()))
+                .doOnSuccess(response -> log.info("[Capacidad] Mensaje enviado con éxito. MessageId: {}", response.messageId()))
                 .map(SendMessageResponse::messageId);
     }
 
@@ -44,3 +45,4 @@ public class SQSSender implements NotificacionEventPublisher {
                 .build();
     }
 }
+

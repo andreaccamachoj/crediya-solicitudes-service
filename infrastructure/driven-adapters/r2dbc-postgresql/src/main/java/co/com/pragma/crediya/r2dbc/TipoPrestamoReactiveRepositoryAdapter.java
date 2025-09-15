@@ -28,4 +28,9 @@ public class TipoPrestamoReactiveRepositoryAdapter extends ReactiveAdapterOperat
         return repository.existsById(BigInteger.valueOf(id));
     }
 
+    @Override
+    public Mono<Boolean> isValidacionAutomaticaEnabled(Long idTipoPrestamo) {
+        return repository.isValidacionAutomaticaEnabled(idTipoPrestamo);
+    }
+
 }

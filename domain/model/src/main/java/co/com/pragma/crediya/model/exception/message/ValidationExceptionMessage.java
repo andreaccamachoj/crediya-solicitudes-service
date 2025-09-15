@@ -21,7 +21,13 @@ public enum ValidationExceptionMessage {
     TERM_INVALID        ("VAL0103", "Plazo inválido",                       "400", "El plazo debe ser mayor que cero."),
     LOAN_TYPE_REQUIRED  ("VAL0104", "Tipo de préstamo obligatorio",         "400", "Debe seleccionar un tipo de préstamo."),
     DOCUMENT_REQUIRED   ("VAL0105", "Documento de identidad obligatorio",   "400", "El documento de identidad es obligatorio."),
-    STATE_REQUIRED   ("VAL0106", "Estado requerido",   "400", "El nombre del estado es obligatorio.");
+    STATE_REQUIRED   ("VAL0106", "Estado requerido",   "400", "El nombre del estado es obligatorio."),
+    ID_SOLICITUD_REQUIRED(
+            "VAL0001",
+            "Id de solicitud requerido",
+            "400",
+            "Debe proporcionar el identificador de la solicitud."
+    );
 
     private final String code;
     private final String description;

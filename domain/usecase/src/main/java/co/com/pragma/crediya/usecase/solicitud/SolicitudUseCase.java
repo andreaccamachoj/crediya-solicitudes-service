@@ -1,14 +1,22 @@
 package co.com.pragma.crediya.usecase.solicitud;
 
+import co.com.pragma.crediya.enums.EstadoSolicitud;
 import co.com.pragma.crediya.enums.RolNombre;
 import co.com.pragma.crediya.model.autenticacion.UsuarioAutenticado;
 import co.com.pragma.crediya.model.estados.gateways.EstadosRepository;
 import co.com.pragma.crediya.model.exception.BusinessException;
+import co.com.pragma.crediya.model.exception.TechnicalException;
 import co.com.pragma.crediya.model.exception.ValidationException;
 import co.com.pragma.crediya.model.exception.message.BusinessExceptionMessage;
+import co.com.pragma.crediya.model.exception.message.TechnicalExceptionMessage;
 import co.com.pragma.crediya.model.exception.message.ValidationExceptionMessage;
+import co.com.pragma.crediya.model.mapper.SolicitudCapacidadMapper;
 import co.com.pragma.crediya.model.solicitud.*;
 import co.com.pragma.crediya.model.solicitud.gateways.SolicitudRepository;
+import co.com.pragma.crediya.model.sqs.NuevaSolicitud;
+import co.com.pragma.crediya.model.sqs.ResultadoSolicitud;
+import co.com.pragma.crediya.model.sqs.SolicitudesAprobadas;
+import co.com.pragma.crediya.model.sqs.gateways.CapacidadEventPublisher;
 import co.com.pragma.crediya.model.sqs.gateways.NotificacionEventPublisher;
 import co.com.pragma.crediya.model.tipoprestamo.gateways.TipoPrestamoRepository;
 import co.com.pragma.crediya.model.usuario.Usuario;
@@ -24,6 +32,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import static co.com.pragma.crediya.model.mapper.SolicitudCapacidadMapper.toCapacidadLambdaRequest;
+import static co.com.pragma.crediya.model.mapper.SolicitudCapacidadMapper.toNuevaSolicitud;
 import static co.com.pragma.crediya.usecase.solicitud.mapper.SolicitudRevisionResponseMapper.buildResponse;
 
 @RequiredArgsConstructor
@@ -34,6 +44,7 @@ public class SolicitudUseCase {
     private final EstadosRepository estadoRepository;
     private final UsuarioGateway usuarioGateway;
     private final NotificacionEventPublisher notificacionEventPublisher;
+    private final CapacidadEventPublisher capacidadEventPublisher;
 
     private final List<String> estados = List.of("PENDIENTE DE REVISIÓN", "RECHAZADO", "REVISION MANUAL");
 
@@ -90,8 +101,19 @@ public class SolicitudUseCase {
                             .idUsuario(usuario.getIdUsuario())
                             .build();
 
-                    return solicitudRepository.save(solicitudParaGuardar);
-                });
+                    return solicitudRepository.save(solicitudParaGuardar)
+                            .flatMap(saved ->
+                                    tipoPrestamoRepository.isValidacionAutomaticaEnabled(saved.getIdTipoPrestamo())
+                                            .defaultIfEmpty(false)
+                                            .flatMap(validAuto ->
+                                                    Boolean.TRUE.equals(validAuto)
+                                                            ? prepararMensajeCapacidadParaLambda(saved.getIdSolicitud()).thenReturn(saved)
+                                                            : Mono.just(saved)
+                                            )
+                            );
+                })
+                .onErrorMap(e -> (e instanceof BusinessException || e instanceof ValidationException) ? e
+                        : new BusinessException(BusinessExceptionMessage.UNEXPECTED_ERROR));
     }
 
     public Mono<SolicitudPageResponse<SolicitudRevisionResponse>> listarSolicitudesPendientes(SolicitudPageRequest pageRequest, UsuarioAutenticado auth, String email) {
@@ -192,5 +214,63 @@ public class SolicitudUseCase {
                 () -> ValidationHelper.validateCondition(req.getEstado() != null,
                         ValidationExceptionMessage.STATE_REQUIRED)
         )).thenReturn(req);
+    }
+
+    public Mono<String> prepararMensajeCapacidadParaLambda(Long idSolicitud) {
+        return solicitudRepository.findDetallesByIdSolicitud(idSolicitud)
+                .switchIfEmpty(Mono.error(new BusinessException(BusinessExceptionMessage.REQUEST_NOT_FOUND)))
+                .flatMap(detalle -> {
+                    Long idUsuario = detalle.getIdusuario();
+
+                    // 1) Usuario
+                    Mono<UsuarioDemografico> usuarioMono = usuarioGateway.findAllByIds(List.of(idUsuario))
+                            .next()
+                            .switchIfEmpty(Mono.error(new BusinessException(BusinessExceptionMessage.USER_NOT_FOUND)))
+                            .onErrorMap(ex -> !(ex instanceof BusinessException),
+                                    ex -> new TechnicalException(TechnicalExceptionMessage.USER_SERVICE_ERROR));
+
+                    // 2) Préstamos aprobados
+                    Mono<List<SolicitudesAprobadas>> activosMono = solicitudRepository
+                            .findSolicitudesAprobadasByUsuarios(List.of(idUsuario))
+                            .filter(sd -> sd.getIdsolicitud() != null)
+                            .map(SolicitudCapacidadMapper::toSolicitudAprobada)
+                            .collectList();
+
+                    // 3) Nueva solicitud
+                    NuevaSolicitud nuevoPrestamo = toNuevaSolicitud(detalle);
+
+                    // 4) Arma payload
+                    return Mono.zip(usuarioMono, activosMono)
+                            .map(tuple -> toCapacidadLambdaRequest(
+                                    idSolicitud,
+                                    tuple.getT1(),
+                                    nuevoPrestamo,
+                                    tuple.getT2()
+                            ));
+                })
+                .flatMap(capacidadEventPublisher::send)
+                .onErrorMap(e -> {
+                    if (e instanceof BusinessException) return e;
+                    if (e instanceof ValidationException) return e;
+                    if (e instanceof TechnicalException) return e;
+                    return new TechnicalException(TechnicalExceptionMessage.UNEXPECTED_ERROR);
+                });
+    }
+
+    public Mono<Solicitud> actualizarEstadoConResultado(ResultadoSolicitud result) {
+        return Mono.justOrEmpty(EstadoSolicitud.fromDecision(result.getDecision()))
+                .switchIfEmpty(Mono.error(new BusinessException(BusinessExceptionMessage.STATE_NOT_FOUND)))
+                .flatMap(estadoEnum ->
+                        estadoRepository.findIdByNombre(estadoEnum.getNombre())
+                                .switchIfEmpty(Mono.error(new BusinessException(BusinessExceptionMessage.STATE_NOT_FOUND)))
+                                .flatMap(idEstado ->
+                                        solicitudRepository.updateEstado(result.getIdSolicitud(), idEstado)
+                                                .then(solicitudRepository.findById(result.getIdSolicitud()))
+                                                .switchIfEmpty(Mono.error(new BusinessException(BusinessExceptionMessage.REQUEST_NOT_FOUND)))
+                                )
+                )
+                .flatMap(solicitud -> notificacionEventPublisher.send(result).thenReturn(solicitud))
+                .onErrorMap(e -> (e instanceof BusinessException || e instanceof ValidationException || e instanceof TechnicalException) ? e
+                        : new TechnicalException(TechnicalExceptionMessage.UNEXPECTED_ERROR));
     }
 }

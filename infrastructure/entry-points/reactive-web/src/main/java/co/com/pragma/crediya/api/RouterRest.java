@@ -1,6 +1,7 @@
 package co.com.pragma.crediya.api;
 
 import co.com.pragma.crediya.api.config.SolicitudPath;
+import co.com.pragma.crediya.api.dto.request.CalcularCapacidadRequest;
 import co.com.pragma.crediya.api.dto.request.CrearSolicitudRequest;
 import co.com.pragma.crediya.api.dto.response.SolicitudResponse;
 import co.com.pragma.crediya.model.solicitud.SolicitudPageResponse;
@@ -194,12 +195,51 @@ public class RouterRest {
                             },
                             security = { @SecurityRequirement(name = "bearerAuth") }
                     )
+            ),
+            @RouterOperation(
+                    path = "/api/v1/calcular-capacidad",
+                    produces = { MediaType.APPLICATION_JSON_VALUE },
+                    method = RequestMethod.POST,
+                    beanClass = Handler.class,
+                    beanMethod = "enviarSolicitudACapacidad",
+                    operation = @Operation(
+                            operationId = "enviarSolicitudACapacidad",
+                            summary = "Enviar solicitud para validación de capacidad",
+                            description = """
+                    Este endpoint permite enviar una solicitud previamente guardada al flujo de 
+                    validación automática de capacidad. 
+
+                    El sistema toma el `idSolicitud` recibido en el body, prepara la información 
+                    y la envía a la cola SQS encargada de procesar la validación en una Lambda.
+                    """,
+                            requestBody = @RequestBody(
+                                    required = true,
+                                    content = @Content(
+                                            schema = @Schema(
+                                                    implementation = CalcularCapacidadRequest.class,
+                                                    description = "Objeto con el identificador de la solicitud que se enviará a capacidad"
+                                            ),
+                                            examples = {
+                                                    @ExampleObject(
+                                                            name = "EjemploSolicitudCapacidad",
+                                                            value = """
+                                    {
+                                      "idSolicitud": 34
+                                    }"""
+                                                    )
+                                            }
+                                    )
+                            ),
+                            security = { @SecurityRequirement(name = "bearerAuth") }
+                    )
             )
+
     })
     public RouterFunction<ServerResponse> routerFunction(Handler handler) {
         return route(POST(solicitudPath.getSolicitud()), handler::listenSaveSolicitud)
                 .andRoute(GET(solicitudPath.getListSolicitud()), handler::listarSolicitudes)
-                .andRoute(PUT(solicitudPath.getUpdateSolicitud()), handler::actualizarEstado);
+                .andRoute(PUT(solicitudPath.getUpdateSolicitud()), handler::actualizarEstado)
+                .andRoute(POST(solicitudPath.getCalculateCapacidad()), handler::enviarSolicitudACapacidad);
     }
 
 }

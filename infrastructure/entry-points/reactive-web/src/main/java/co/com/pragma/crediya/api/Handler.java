@@ -1,5 +1,6 @@
 package co.com.pragma.crediya.api;
 
+import co.com.pragma.crediya.api.dto.request.CalcularCapacidadRequest;
 import co.com.pragma.crediya.api.dto.request.CrearSolicitudRequest;
 import co.com.pragma.crediya.api.dto.request.SolicitudCambioEstadoRequest;
 import co.com.pragma.crediya.api.mapper.SolicitudMapper;
@@ -104,4 +105,14 @@ public class Handler {
                 });
     }
 
+
+    public Mono<ServerResponse> enviarSolicitudACapacidad(ServerRequest request) {
+        return request.bodyToMono(CalcularCapacidadRequest.class)
+                .map(CalcularCapacidadRequest::idSolicitud)
+                .flatMap(useCase::prepararMensajeCapacidadParaLambda)
+                .flatMap(messageId -> ServerResponse
+                        .accepted()
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(Map.of("messageId", messageId)));
+    }
 }
