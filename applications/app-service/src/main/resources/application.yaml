@@ -54,6 +54,8 @@ adapter:
       AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
     calculator:
       queueUrl: "${QUEUEURL_CAPACIDAD:https://sqs.us-east-1.amazonaws.com/119570504750/QueueLoanCalculator}"
+    approved:
+      queueUrl: "${QUEUEURL_APROBADA:https://sqs.us-east-1.amazonaws.com/119570504750/QueueApprovedApplications}"
 logging:
   level:
     co.com.pragma.crediya.sqs: "DEBUG"
@@ -82,7 +84,6 @@ resilience4j:
 entrypoint:
   sqs:
     region: "${REGION:us-east-1}"
-    # endpoint: "http://localhost:4566"
     queueUrl: "${QUEUEURL_RESULTLOAN:https://sqs.us-east-1.amazonaws.com/119570504750/QueueLoanResult}"
     waitTimeSeconds: 20
     maxNumberOfMessages: 10

@@ -14,8 +14,10 @@ import co.com.pragma.crediya.model.mapper.SolicitudCapacidadMapper;
 import co.com.pragma.crediya.model.solicitud.*;
 import co.com.pragma.crediya.model.solicitud.gateways.SolicitudRepository;
 import co.com.pragma.crediya.model.sqs.NuevaSolicitud;
+import co.com.pragma.crediya.model.sqs.ReportesSolicitudesAprobadas;
 import co.com.pragma.crediya.model.sqs.ResultadoSolicitud;
 import co.com.pragma.crediya.model.sqs.SolicitudesAprobadas;
+import co.com.pragma.crediya.model.sqs.gateways.AprobacionEventPublisher;
 import co.com.pragma.crediya.model.sqs.gateways.CapacidadEventPublisher;
 import co.com.pragma.crediya.model.sqs.gateways.NotificacionEventPublisher;
 import co.com.pragma.crediya.model.tipoprestamo.gateways.TipoPrestamoRepository;
@@ -45,6 +47,7 @@ public class SolicitudUseCase {
     private final UsuarioGateway usuarioGateway;
     private final NotificacionEventPublisher notificacionEventPublisher;
     private final CapacidadEventPublisher capacidadEventPublisher;
+    private final AprobacionEventPublisher aprobacionEventPublisher;
 
     private final List<String> estados = List.of("PENDIENTE DE REVISIÓN", "RECHAZADO", "REVISION MANUAL");
 
@@ -178,7 +181,6 @@ public class SolicitudUseCase {
     ) {
         return validarSolicitudUpdate(req, auth)
                 .flatMap(validReq -> {
-
                     Mono<Solicitud> solicitudMono = solicitudRepository.findById(validReq.getIdSolicitud())
                             .switchIfEmpty(Mono.error(new BusinessException(BusinessExceptionMessage.REQUEST_NOT_FOUND)));
 
@@ -192,9 +194,16 @@ public class SolicitudUseCase {
                                         .then(
                                                 solicitudRepository.findDetallesByIdSolicitud(validReq.getIdSolicitud())
                                                         .switchIfEmpty(Mono.error(new BusinessException(BusinessExceptionMessage.REQUEST_NOT_FOUND)))
-                                                        .flatMap(solicitudActualizada ->
-                                                                notificacionEventPublisher.send(solicitudActualizada)
-                                                                        .thenReturn(solicitudActualizada)
+                                                        .flatMap(detalleActualizado ->
+                                                                notificacionEventPublisher.send(detalleActualizado)
+                                                                        .then(
+                                                                                enviarEventoAprobacionSiCorresponde(
+                                                                                        validReq.getEstado(),
+                                                                                        detalleActualizado.getIdsolicitud(),
+                                                                                        detalleActualizado.getIdusuario(),
+                                                                                        detalleActualizado.getMonto()
+                                                                                ).thenReturn(detalleActualizado)
+                                                                        )
                                                         )
                                         );
                             });
@@ -269,8 +278,37 @@ public class SolicitudUseCase {
                                                 .switchIfEmpty(Mono.error(new BusinessException(BusinessExceptionMessage.REQUEST_NOT_FOUND)))
                                 )
                 )
-                .flatMap(solicitud -> notificacionEventPublisher.send(result).thenReturn(solicitud))
+                .flatMap(solicitud ->
+                        notificacionEventPublisher.send(result)
+                                .then(
+                                        enviarEventoAprobacionSiCorresponde(
+                                                result.getDecision(),
+                                                solicitud.getIdSolicitud(),
+                                                solicitud.getIdUsuario(),
+                                                solicitud.getMonto()
+                                        ).thenReturn(solicitud)
+                                )
+                )
                 .onErrorMap(e -> (e instanceof BusinessException || e instanceof ValidationException || e instanceof TechnicalException) ? e
                         : new TechnicalException(TechnicalExceptionMessage.UNEXPECTED_ERROR));
     }
+
+    private Mono<Void> enviarEventoAprobacionSiCorresponde(
+            String decisionOCadenaEstado,
+            Long idSolicitud,
+            Long idUsuario,
+            Double monto
+    ) {
+        return Mono.justOrEmpty(EstadoSolicitud.fromDecision(decisionOCadenaEstado))
+                .filter(estado -> estado == EstadoSolicitud.APROBADO)
+                .flatMap(__ -> aprobacionEventPublisher.send(
+                        new ReportesSolicitudesAprobadas(
+                                idSolicitud,
+                                idUsuario,
+                                monto,
+                                EstadoSolicitud.APROBADO.getNombre()
+                        )
+                ).then());
+    }
+
 }

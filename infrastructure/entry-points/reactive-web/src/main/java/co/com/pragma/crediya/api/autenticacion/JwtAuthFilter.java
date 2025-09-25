@@ -40,7 +40,8 @@ public class JwtAuthFilter implements WebFilter {
         if (path1.startsWith("/swagger-ui")
                 || path1.startsWith("/v3/api-docs")
                 || path1.startsWith("/swagger-resources")
-                || path1.startsWith("/webjars")) {
+                || path1.startsWith("/webjars")
+                || path1.startsWith("/actuator/health")) {
             return chain.filter(ex);
         }
         long t0 = System.nanoTime();
